@@ -74,6 +74,10 @@ export type Props<T> = {|
   overscanRowsCount?: number,
   rowCount: number,
   rowHeight: itemSize,
+  stickyClassNamePrefix?: string,
+  stickyElementType?: React$ElementType,
+  stickyFirstColumn?: boolean,
+  stickyFirstRow?: boolean,
   style?: Object,
   useIsScrolling: boolean,
   width: number,
@@ -332,6 +336,10 @@ export default function createGridComponent({
         outerElementType,
         outerTagName,
         rowCount,
+        stickyClassNamePrefix,
+        stickyElementType,
+        stickyFirstColumn,
+        stickyFirstRow,
         style,
         useIsScrolling,
         width,
@@ -345,14 +353,19 @@ export default function createGridComponent({
       const [rowStartIndex, rowStopIndex] = this._getVerticalRangeToRender();
 
       const items = [];
+      const stickyRowItems = [];
+      const stickyColumnItems = [];
+      const minRowIndex = stickyFirstRow ? 1 : 0;
+      const minColumnIndex = stickyFirstColumn ? 1 : 0;
+
       if (columnCount > 0 && rowCount) {
         for (
-          let rowIndex = rowStartIndex;
+          let rowIndex = Math.max(minRowIndex, rowStartIndex);
           rowIndex <= rowStopIndex;
           rowIndex++
         ) {
           for (
-            let columnIndex = columnStartIndex;
+            let columnIndex = Math.max(minColumnIndex, columnStartIndex);
             columnIndex <= columnStopIndex;
             columnIndex++
           ) {
@@ -364,6 +377,44 @@ export default function createGridComponent({
                 key: itemKey({ columnIndex, data: itemData, rowIndex }),
                 rowIndex,
                 style: this._getItemStyle(rowIndex, columnIndex),
+              })
+            );
+          }
+        }
+
+        if (stickyFirstColumn) {
+          for (
+            let rowIndex = Math.max(minRowIndex, rowStartIndex);
+            rowIndex <= rowStopIndex;
+            rowIndex++
+          ) {
+            stickyColumnItems.push(
+              createElement(children, {
+                columnIndex: 0,
+                data: itemData,
+                isScrolling: useIsScrolling ? isScrolling : undefined,
+                key: itemKey({ columnIndex: 0, data: itemData, rowIndex }),
+                rowIndex,
+                style: this._getItemStyle(rowIndex, 0),
+              })
+            );
+          }
+        }
+
+        if (stickyFirstRow) {
+          for (
+            let columnIndex = Math.max(minColumnIndex, columnStartIndex);
+            columnIndex <= columnStopIndex;
+            columnIndex++
+          ) {
+            stickyRowItems.push(
+              createElement(children, {
+                columnIndex,
+                data: itemData,
+                isScrolling: useIsScrolling ? isScrolling : undefined,
+                key: itemKey({ columnIndex, data: itemData, rowIndex: 0 }),
+                rowIndex: 0,
+                style: this._getItemStyle(0, columnIndex),
               })
             );
           }
@@ -381,12 +432,53 @@ export default function createGridComponent({
         this._instanceProps
       );
 
-      return createElement(
+      if (stickyColumnItems.length) {
+        const topLeftStyle = this._getItemStyle(0, 0);
+
+        items.unshift(
+          createElement(stickyElementType || 'div', {
+            children: stickyColumnItems,
+            key: 'sticky-first-column',
+            className:
+              stickyClassNamePrefix && `${stickyClassNamePrefix}-column`,
+            style: {
+              height: estimatedTotalHeight,
+              width: topLeftStyle.width,
+              position: 'sticky',
+              left: 0,
+              zIndex: 1,
+              transform: `translateY(-${topLeftStyle.height}px)`,
+            },
+          })
+        );
+      }
+
+      if (stickyRowItems.length) {
+        const topLeftStyle = this._getItemStyle(0, 0);
+
+        items.unshift(
+          createElement(stickyElementType || 'div', {
+            children: stickyRowItems,
+            key: 'sticky-first-row',
+            className: stickyClassNamePrefix && `${stickyClassNamePrefix}-row`,
+            style: {
+              height: topLeftStyle.height,
+              width: estimatedTotalWidth,
+              position: 'sticky',
+              top: 0,
+              zIndex: 1,
+            },
+          })
+        );
+      }
+
+      const outerElement = createElement(
         outerElementType || outerTagName || 'div',
         {
           className,
           onScroll: this._onScroll,
           ref: this._outerRefSetter,
+          key: 'outer-element',
           style: {
             position: 'relative',
             height,
@@ -408,6 +500,37 @@ export default function createGridComponent({
           },
         })
       );
+
+      if (stickyRowItems.length && stickyColumnItems.length) {
+        const topLeftStyle = this._getItemStyle(0, 0);
+
+        return [
+          createElement(stickyElementType || 'div', {
+            children: [
+              createElement(children, {
+                columnIndex: 0,
+                data: itemData,
+                isScrolling: useIsScrolling ? isScrolling : undefined,
+                key: itemKey({ columnIndex: 0, data: itemData, rowIndex: 0 }),
+                rowIndex: 0,
+                style: this._getItemStyle(0, 0),
+              }),
+            ],
+            key: 'sticky-corner',
+            className:
+              stickyClassNamePrefix && `${stickyClassNamePrefix}-corner`,
+            style: {
+              height: topLeftStyle.height,
+              width: topLeftStyle.width,
+              position: 'fixed',
+              zIndex: 2,
+            },
+          }),
+          outerElement,
+        ];
+      }
+
+      return outerElement;
     }
 
     _callOnItemsRendered: (
