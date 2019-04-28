@@ -327,6 +327,7 @@ export default function createGridComponent({
         className,
         columnCount,
         direction,
+        forcedCells,
         height,
         innerRef,
         innerElementType,
@@ -414,6 +415,33 @@ export default function createGridComponent({
               })
             );
           }
+        }
+      }
+
+      if (forcedCells && forcedCells.length) {
+        for (let i = 0; i < forcedCells.length; i++) {
+          const { rowIndex, columnIndex } = forcedCells[i];
+          if (
+            rowIndex >= Math.max(minRowIndex, rowStartIndex) &&
+            rowIndex <= rowStopIndex &&
+            columnIndex >= Math.max(minColumnIndex, columnStartIndex) &&
+            columnIndex <= columnStopIndex
+          ) {
+            // We've already rendered the forced cell as part of our normal
+            // operations. Don't create a duplicate
+            continue;
+          }
+
+          items.push(
+            createElement(children, {
+              columnIndex,
+              data: itemData,
+              isScrolling: useIsScrolling ? isScrolling : undefined,
+              key: itemKey({ columnIndex, data: itemData, rowIndex }),
+              rowIndex,
+              style: this._getItemStyle(rowIndex, columnIndex),
+            })
+          );
         }
       }
 
