@@ -384,7 +384,11 @@ export default function createGridComponent({
         }
 
         if (stickyFirstColumn) {
-          for (let rowIndex = 1; rowIndex < this.props.rowCount; rowIndex++) {
+          for (
+            let rowIndex = Math.max(minRowIndex, rowStartIndex);
+            rowIndex <= rowStopIndex;
+            rowIndex++
+          ) {
             stickyColumnItems.push(
               createElement(children, {
                 columnIndex: 0,
