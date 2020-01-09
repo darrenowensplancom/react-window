@@ -3,10 +3,11 @@
 import memoizeOne from 'memoize-one';
 import { createElement, PureComponent } from 'react';
 import { cancelTimeout, requestTimeout } from './timer';
+import { getRTLOffsetType } from './domHelpers';
 
 import type { TimeoutID } from './timer';
 
-export type ScrollToAlign = 'auto' | 'center' | 'start' | 'end';
+export type ScrollToAlign = 'auto' | 'smart' | 'center' | 'start' | 'end';
 
 type itemSize = number | ((index: number) => number);
 // TODO Deprecate directions "horizontal" and "vertical"
@@ -38,6 +39,22 @@ type onScrollCallback = ({
 type ScrollEvent = SyntheticEvent<HTMLDivElement>;
 type ItemStyleCache = { [index: number]: Object };
 
+type OuterProps = {|
+  children: React$Node,
+  className: string | void,
+  onScroll: ScrollEvent => void,
+  style: {
+    [string]: mixed,
+  },
+|};
+
+type InnerProps = {|
+  children: React$Node,
+  style: {
+    [string]: mixed,
+  },
+|};
+
 export type Props<T> = {|
   children: RenderComponent<T>,
   className?: string,
@@ -45,7 +62,7 @@ export type Props<T> = {|
   height: number | string,
   initialScrollOffset?: number,
   innerRef?: any,
-  innerElementType?: React$ElementType,
+  innerElementType?: string | React$AbstractComponent<InnerProps, any>,
   innerTagName?: string, // deprecated
   itemCount: number,
   itemData: T,
@@ -55,7 +72,7 @@ export type Props<T> = {|
   onItemsRendered?: onItemsRenderedCallback,
   onScroll?: onScrollCallback,
   outerRef?: any,
-  outerElementType?: React$ElementType,
+  outerElementType?: string | React$AbstractComponent<OuterProps, any>,
   outerTagName?: string, // deprecated
   overscanCount: number,
   style?: Object,
@@ -107,13 +124,15 @@ const IS_SCROLLING_DEBOUNCE_INTERVAL = 150;
 
 const defaultItemKey = (index: number, data: any) => index;
 
-// In DEV mode, this Set helps us only log a warning once per component instace.
+// In DEV mode, this Set helps us only log a warning once per component instance.
 // This avoids spamming the console every time a render happens.
 let devWarningsDirection = null;
 let devWarningsTagName = null;
 if (process.env.NODE_ENV !== 'production') {
-  devWarningsDirection = new WeakSet();
-  devWarningsTagName = new WeakSet();
+  if (typeof window !== 'undefined' && typeof window.WeakSet !== 'undefined') {
+    devWarningsDirection = new WeakSet();
+    devWarningsTagName = new WeakSet();
+  }
 }
 
 export default function createListComponent({
@@ -178,19 +197,27 @@ export default function createListComponent({
     }
 
     scrollTo(scrollOffset: number): void {
-      this.setState(
-        prevState => ({
+      scrollOffset = Math.max(0, scrollOffset);
+
+      this.setState(prevState => {
+        if (prevState.scrollOffset === scrollOffset) {
+          return null;
+        }
+        return {
           scrollDirection:
             prevState.scrollOffset < scrollOffset ? 'forward' : 'backward',
           scrollOffset: scrollOffset,
           scrollUpdateWasRequested: true,
-        }),
-        this._resetIsScrollingDebounced
-      );
+        };
+      }, this._resetIsScrollingDebounced);
     }
 
     scrollToItem(index: number, align: ScrollToAlign = 'auto'): void {
+      const { itemCount } = this.props;
       const { scrollOffset } = this.state;
+
+      index = Math.max(0, Math.min(index, itemCount - 1));
+
       this.scrollTo(
         getOffsetForIndexAndAlignment(
           this.props,
@@ -205,14 +232,13 @@ export default function createListComponent({
     componentDidMount() {
       const { direction, initialScrollOffset, layout } = this.props;
 
-      if (typeof initialScrollOffset === 'number' && this._outerRef !== null) {
+      if (typeof initialScrollOffset === 'number' && this._outerRef != null) {
+        const outerRef = ((this._outerRef: any): HTMLElement);
         // TODO Deprecate direction "horizontal"
         if (direction === 'horizontal' || layout === 'horizontal') {
-          ((this
-            ._outerRef: any): HTMLDivElement).scrollLeft = initialScrollOffset;
+          outerRef.scrollLeft = initialScrollOffset;
         } else {
-          ((this
-            ._outerRef: any): HTMLDivElement).scrollTop = initialScrollOffset;
+          outerRef.scrollTop = initialScrollOffset;
         }
       }
 
@@ -223,12 +249,32 @@ export default function createListComponent({
       const { direction, layout } = this.props;
       const { scrollOffset, scrollUpdateWasRequested } = this.state;
 
-      if (scrollUpdateWasRequested && this._outerRef !== null) {
+      if (scrollUpdateWasRequested && this._outerRef != null) {
+        const outerRef = ((this._outerRef: any): HTMLElement);
+
         // TODO Deprecate direction "horizontal"
         if (direction === 'horizontal' || layout === 'horizontal') {
-          ((this._outerRef: any): HTMLDivElement).scrollLeft = scrollOffset;
+          if (direction === 'rtl') {
+            // TRICKY According to the spec, scrollLeft should be negative for RTL aligned elements.
+            // This is not the case for all browsers though (e.g. Chrome reports values as positive, measured relative to the left).
+            // So we need to determine which browser behavior we're dealing with, and mimic it.
+            switch (getRTLOffsetType()) {
+              case 'negative':
+                outerRef.scrollLeft = -scrollOffset;
+                break;
+              case 'positive-ascending':
+                outerRef.scrollLeft = scrollOffset;
+                break;
+              default:
+                const { clientWidth, scrollWidth } = outerRef;
+                outerRef.scrollLeft = scrollWidth - clientWidth - scrollOffset;
+                break;
+            }
+          } else {
+            outerRef.scrollLeft = scrollOffset;
+          }
         } else {
-          ((this._outerRef: any): HTMLDivElement).scrollTop = scrollOffset;
+          outerRef.scrollTop = scrollOffset;
         }
       }
 
@@ -316,7 +362,7 @@ export default function createListComponent({
           ref: innerRef,
           style: {
             height: isHorizontal ? '100%' : estimatedTotalSize,
-            pointerEvents: isScrolling ? 'none' : '',
+            pointerEvents: isScrolling ? 'none' : undefined,
             width: isHorizontal ? estimatedTotalSize : '100%',
           },
         })
@@ -486,17 +532,27 @@ export default function createListComponent({
 
         const { direction } = this.props;
 
-        // HACK According to the spec, scrollLeft should be negative for RTL aligned elements.
-        // Chrome does not seem to adhere; its scrolLeft values are positive (measured relative to the left).
-        // See https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollLeft
         let scrollOffset = scrollLeft;
         if (direction === 'rtl') {
-          if (scrollLeft <= 0) {
-            scrollOffset = -scrollOffset;
-          } else {
-            scrollOffset = scrollWidth - clientWidth - scrollLeft;
+          // TRICKY According to the spec, scrollLeft should be negative for RTL aligned elements.
+          // This is not the case for all browsers though (e.g. Chrome reports values as positive, measured relative to the left).
+          // It's also easier for this component if we convert offsets to the same format as they would be in for ltr.
+          // So the simplest solution is to determine which browser behavior we're dealing with, and convert based on it.
+          switch (getRTLOffsetType()) {
+            case 'negative':
+              scrollOffset = -scrollLeft;
+              break;
+            case 'positive-descending':
+              scrollOffset = scrollWidth - clientWidth - scrollLeft;
+              break;
           }
         }
+
+        // Prevent Safari's elastic scrolling from causing visual shaking when scrolling past bounds.
+        scrollOffset = Math.max(
+          0,
+          Math.min(scrollOffset, scrollWidth - clientWidth)
+        );
 
         return {
           isScrolling: true,
@@ -509,7 +565,7 @@ export default function createListComponent({
     };
 
     _onScrollVertical = (event: ScrollEvent): void => {
-      const { scrollTop } = event.currentTarget;
+      const { clientHeight, scrollHeight, scrollTop } = event.currentTarget;
       this.setState(prevState => {
         if (prevState.scrollOffset === scrollTop) {
           // Scroll position may have been updated by cDM/cDU,
@@ -518,11 +574,17 @@ export default function createListComponent({
           return null;
         }
 
+        // Prevent Safari's elastic scrolling from causing visual shaking when scrolling past bounds.
+        const scrollOffset = Math.max(
+          0,
+          Math.min(scrollTop, scrollHeight - clientHeight)
+        );
+
         return {
           isScrolling: true,
           scrollDirection:
-            prevState.scrollOffset < scrollTop ? 'forward' : 'backward',
-          scrollOffset: scrollTop,
+            prevState.scrollOffset < scrollOffset ? 'forward' : 'backward',
+          scrollOffset,
           scrollUpdateWasRequested: false,
         };
       }, this._resetIsScrollingDebounced);
@@ -587,8 +649,8 @@ const validateSharedProps = (
 ): void => {
   if (process.env.NODE_ENV !== 'production') {
     if (innerTagName != null || outerTagName != null) {
-      if (!((devWarningsTagName: any): WeakSet<any>).has(instance)) {
-        ((devWarningsTagName: any): WeakSet<any>).add(instance);
+      if (devWarningsTagName && !devWarningsTagName.has(instance)) {
+        devWarningsTagName.add(instance);
         console.warn(
           'The innerTagName and outerTagName props have been deprecated. ' +
             'Please use the innerElementType and outerElementType props instead.'
@@ -602,8 +664,8 @@ const validateSharedProps = (
     switch (direction) {
       case 'horizontal':
       case 'vertical':
-        if (!((devWarningsDirection: any): WeakSet<any>).has(instance)) {
-          ((devWarningsDirection: any): WeakSet<any>).add(instance);
+        if (devWarningsDirection && !devWarningsDirection.has(instance)) {
+          devWarningsDirection.add(instance);
           console.warn(
             'The direction prop should be either "ltr" (default) or "rtl". ' +
               'Please use the layout prop to specify "vertical" (default) or "horizontal" orientation.'

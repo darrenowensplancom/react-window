@@ -206,9 +206,16 @@ const PROPS = [
       <Fragment>
         <p>Called when the range of items rendered by the grid changes.</p>
         <p>
-          This callback will only be called when item indices change. It will
+          This callback will only be called when item indices change. It will
           not be called if items are re-rendered for other reasons (e.g. a
           change in <code>isScrolling</code> or <code>data</code> params).
+        </p>
+        <p>
+          The <code>visibleStartIndex</code> and <code>visibleStopIndex</code>
+          parameters are the first and last index currently visible, including
+          items that are partially visible. Note that scrolling a
+          partially-visible item into full visibility might not trigger this
+          callback because the item indices might not change.
         </p>
         <div className={styles.CodeBlockWrapper}>
           <CodeBlock value={CODE_ON_ITEMS_RENDERED} />
@@ -268,7 +275,7 @@ const PROPS = [
     type: 'string',
   },
   {
-    defaultValue: 1,
+    defaultValue: 'div',
     description: (
       <Fragment>
         <p>
@@ -291,6 +298,18 @@ const PROPS = [
         </p>
       </Fragment>
     ),
+    name: 'overscanColumnCount',
+    type: 'number',
+  },
+  {
+    description: (
+      <p>
+        <strong className={styles.DeprecatedProp}>
+          This property has been deprecated.
+        </strong>{' '}
+        Please use the <code>overscanColumnCount</code> property instead.
+      </p>
+    ),
     name: 'overscanColumnsCount',
     type: 'number',
   },
@@ -300,8 +319,8 @@ const PROPS = [
         <strong className={styles.DeprecatedProp}>
           This property has been deprecated.
         </strong>{' '}
-        Please use the <code>overscanColumnsCount</code> and{' '}
-        <code>overscanRowsCount</code> properties instead.
+        Please use the <code>overscanColumnCount</code> and{' '}
+        <code>overscanRowCount</code> properties instead.
       </p>
     ),
     name: 'overscanCount',
@@ -326,10 +345,25 @@ const PROPS = [
           </li>
         </ul>
         <p>
-          Note that overscanning too much can negatively impact performance. By
-          default, grid overscans by one item.
+          Note that overscanning too much can negatively impact performance. To
+          support tabbing and accessibility, Grid will overscan at least one
+          item, even if this value is set to zero. When items are partially
+          visible at the start and/or end of the viewport, overscanning starts
+          after the partially visible items.
         </p>
       </Fragment>
+    ),
+    name: 'overscanRowCount',
+    type: 'number',
+  },
+  {
+    description: (
+      <p>
+        <strong className={styles.DeprecatedProp}>
+          This property has been deprecated.
+        </strong>{' '}
+        Please use the <code>overscanRowCount</code> property instead.
+      </p>
     ),
     name: 'overscanRowsCount',
     type: 'number',
@@ -409,19 +443,37 @@ const METHODS = [
         <p>
           By default, the Grid will scroll as little as possible to ensure the
           item is visible. You can control the alignment of the item though by
-          specifying a second alignment parameter. Acceptable values are:
+          specifying an <code>align</code> property. Acceptable values are:
         </p>
         <ul>
           <li>
-            auto (default) - Scroll as little as possible to ensure the item is
-            visible. (If the item is already visible, it won't scroll at all.)
+            <code>auto</code> (default) - Scroll as little as possible to ensure
+            the item is visible. (If the item is already visible, it won't
+            scroll at all.)
           </li>
-          <li>center - Center align the item within the grid.</li>
           <li>
-            end - Align the item to the bottom, right hand side of the grid.
+            smart - If the item is already fully visible, don't scroll at all.
+            If it's less than one viewport away, scroll as little as possible so
+            that it becomes visible. If it is more than one viewport away,
+            scroll so that it is centered within the list.
           </li>
-          <li>start - Align the item to the top, left hand of the grid.</li>
+          <li>
+            <code>center</code> - Center align the item within the grid.
+          </li>
+          <li>
+            <code>end</code> - Align the item to the bottom, right hand side of
+            the grid.
+          </li>
+          <li>
+            <code>start</code> - Align the item to the top, left hand of the
+            grid.
+          </li>
         </ul>
+        <p>
+          If either <code>columnIndex</code> or <code>rowIndex</code> are
+          omitted, <code>scrollLeft</code> or <code>scrollTop</code> will be
+          unchanged (respectively).
+        </p>
         <p>
           <Link to="/examples/list/scroll-to-item">
             See here for an example of this API.
@@ -430,6 +482,6 @@ const METHODS = [
       </Fragment>
     ),
     signature:
-      'scrollToItem({align: string = "auto", columnIndex: number, rowIndex: number }): void',
+      'scrollToItem({align: string = "auto", columnIndex?: number, rowIndex?: number }): void',
   },
 ];

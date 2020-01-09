@@ -205,6 +205,17 @@ const VariableSizeList = createListComponent({
       itemMetadata.offset - size + itemMetadata.size
     );
 
+    if (align === 'smart') {
+      if (
+        scrollOffset >= minOffset - size &&
+        scrollOffset <= maxOffset + size
+      ) {
+        align = 'auto';
+      } else {
+        align = 'center';
+      }
+    }
+
     switch (align) {
       case 'start':
         return maxOffset;
@@ -216,7 +227,7 @@ const VariableSizeList = createListComponent({
       default:
         if (scrollOffset >= minOffset && scrollOffset <= maxOffset) {
           return scrollOffset;
-        } else if (scrollOffset - minOffset < maxOffset - scrollOffset) {
+        } else if (scrollOffset < minOffset) {
           return minOffset;
         } else {
           return maxOffset;
